@@ -77,7 +77,7 @@ std::vector <peers *> get_peers(){
         std::shared_ptr<bencoding::BItem> decodedResponse = bencoding::Decode(response);
             if (auto dictionary = std::dynamic_pointer_cast<bencoding::BDictionary>(decodedResponse)) {
             // Access and print the parsed information
-            for (const auto& entry : dictionary->getMap()) {
+            for (const auto& entry : dictionary.)) {
                 std::cout << entry.first << ": " << entry.second->toString() << std::endl;
             }
     }else{

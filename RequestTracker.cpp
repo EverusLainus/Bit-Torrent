@@ -10,8 +10,8 @@
 #include "./cpp-bencoding/include/bencoding.h"
 
 //get announce URL
-std::string get_PeerID(){ 
-
+std::string TrackerRequest::get_PeerID(){ 
+    std::cout << "into peers ID"<<std::endl;
     const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     std::default_random_engine rng(std::random_device{}());
     std::uniform_int_distribution<> dist(0, sizeof(charset) - 2);
@@ -51,21 +51,26 @@ std::string get_PeerID(){
 }
 
 //assumes someone has filled the tracker Request class
-std::vector <peers *> get_peers(){
-    TrackerRequest trackerRequest;
-    std::string anounceurl = trackerRequest.get_announce();
-    std::string infohash = trackerRequest.infohash;
+void TrackerRequest::get_peers(std::string& file_path){
+    std::cout << "into get_peers "<<std::endl;
+    TorrentFileParser torrentFileParser(file_path);
+    std::cout << "get peers: after torrent file parser "<<std::endl;
+    std::string anounceurl = torrentFileParser.getAnnounce();
+    std::cout << "get peers: after announce "<<std::endl;
+    std::string info = torrentFileParser.getInfoHash();
+    std::cout << "get peers: after hash"<<std::endl;
     std::string peerid = get_PeerID();
-    int port = trackerRequest.port;
+    std::cout << "get peers: after peer id "<<std::endl;
+    int port = 2300;
 
     //construct the tracker request URL
-    std::string trackerUrl = anounceurl + "?info_hash="+ infohash+
+    std::string trackerUrl = anounceurl + "?info_hash="+ info+
     "&peer_id="+peerid 
     +"&port="+std::to_string(port)
-    +"&uploaded="+std::to_string(trackerRequest.uploaded)
-    +"&downloaded=" +std::to_string(trackerRequest.downloaded)
-    +"&left=" + std::to_string(trackerRequest.left)
-    +"&event=" + std::to_string(trackerRequest.event);
+    +"&uploaded="+std::to_string(0)
+    +"&downloaded=" +std::to_string(1)
+    +"&left=" + std::to_string(1)
+    +"&compact=" + std::to_string(1);
 
     //send the tracker request
     auto response = cpr::Get(cpr::Url{trackerUrl});
@@ -74,18 +79,17 @@ std::vector <peers *> get_peers(){
     //check if the request was successful
     if(response.status_code == 200){
         std::cout <<"Tracker response: "<<response.text <<std::endl;
+        /*
         std::shared_ptr<bencoding::BItem> decodedResponse = bencoding::Decode(response);
             if (auto dictionary = std::dynamic_pointer_cast<bencoding::BDictionary>(decodedResponse)) {
             // Access and print the parsed information
-            for (const auto& entry : dictionary.)) {
+            for (const auto& entry : dictionary.) {
                 std::cout << entry.first << ": " << entry.second->toString() << std::endl;
             }
+            */
     }else{
         std::cerr <<"Tracker request failed with status code: "<<response.status_code<<std::endl;
     }
 }
 
-void TrackerResponse(){
-
-}
 

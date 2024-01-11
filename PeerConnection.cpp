@@ -1,5 +1,6 @@
 #include "PeerConnection.hpp"
 #include "RequestTracker.hpp"
+#include "BitTorrentMessage.hpp"
 #include "Connect.h"
 
 std::string PeerConnection::CreateHandshakeMessage(){
@@ -95,7 +96,7 @@ void PeerConnection::ReceiveBitfieldMessage(int sock){
     int ret = poll(&fd, 1, 3000);
     if(ret == -1){
         perror("poll");
-    } else if( ret = 0){
+    } else if( ret == 0){
         perror("poll");
     }
      
@@ -115,7 +116,16 @@ void PeerConnection::ReceiveBitfieldMessage(int sock){
     std::cout << "ReceiveBitfieldMessage: message is: "<<messageLengthStr <<std::endl;
     std::cout << "ReceiveBitfieldMessage: length of the buffer: "<<bufferSize <<std::endl;
     std::string receive_bitField_message = ReceiveData(sock, bufferSize);
+    if (receive_bitField_message.empty())
+        BitTorrentMessage(keepAlive);
     auto messageId = (uint8_t) receive_bitField_message[0];
+    std::string payload = receive_bitField_message.substr(1);
+    BitTorrentMessage message(messageId, payload);
+    if(message.message_id != bitField){
+        std::cout << " ReceiveBitfieldMessage: expected a bitField message\n";
+    }
+    peerBitField = message.bitfield;
+    std::cout << "bitfield message is "<<peerBitField << std::endl;
 }
 
 void PeerConnection::PerformHandshake(){

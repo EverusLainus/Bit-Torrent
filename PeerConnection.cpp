@@ -39,26 +39,42 @@ void SendData(int sock, std::string& message){
         buffer[i] = message[i];
     }
     std::cout << "sendData: filled buffer"<<std::endl;
-    int send_bytes = send(sock, buffer, n, 0);
+    int bytes_send=0;
+    int send_bytes;
+
+    while(bytes_send < n){
+        send_bytes = send(sock, buffer, n, 0);
+        std::cout << send_bytes << std::endl;
+
+        if(send_bytes < 0){
+        perror("send");
+        continue;
+        }
+        bytes_send += send_bytes;
+    }
+    
     std::cout << "sendData: after send "<<std::endl;
     std::cout << "sendData: no of bytes send "<< send_bytes <<std::endl;
-    if(send_bytes < 0){
-        perror("send");
-    }
+    
 }
 
 std::string  ReceiveData(int sock, int size){
     char buffer[size];
+    std::string reply;
+    do{
     int bytesRead = recv(sock, buffer, size, 0);
     std::cout << "ReceiveData:size is "<<size <<std::endl;
     std::cout <<"ReceiveData: bytes read : "<<bytesRead<<std::endl;
     if(bytesRead == -1){
         perror("recv");
-    }
-    std::string reply;
+        continue;
+    }  
+    size = size - bytesRead;
     for(int i=0; i<bytesRead; ++i){
         reply.push_back(buffer[i]);
     }
+    }while (size > 0);
+    
     std::cout <<"ReceiveData: received data "<<"." << reply<<". " << std::endl;
     /*
     for(int i=0; i< reply.size(); ++i){
@@ -119,13 +135,18 @@ void PeerConnection::ReceiveBitfieldMessage(int sock){
     if (receive_bitField_message.empty())
         BitTorrentMessage(keepAlive);
     auto messageId = (uint8_t) receive_bitField_message[0];
+    printf("message id is %d\n", messageId);
+    std::cout << "message id is :" << messageId << std::endl;
     std::string payload = receive_bitField_message.substr(1);
     BitTorrentMessage message(messageId, payload);
+    printf("message id is %d\n", message.message_id);
     if(message.message_id != bitField){
         std::cout << " ReceiveBitfieldMessage: expected a bitField message\n";
     }
     peerBitField = message.bitfield;
+    printf("bitfield message in printf is %d\n", message.bitfield.c_str());
     std::cout << "bitfield message is "<<peerBitField << std::endl;
+    SendInterested(sock);
 }
 
 void PeerConnection::PerformHandshake(){
@@ -147,3 +168,12 @@ void PeerConnection::PerformHandshake(){
     ReceiveBitfieldMessage(socket);
 }
 
+void PeerConnection::SendInterested(int socket){
+    std::string interstedMessage;
+    interstedMessage = interested
+    int send_res = send(socket, interestedMessage, sizeof(interestedMessage), 0);
+    if(send_res == -1){
+        std::cout << "error in sending message " << std::endl;
+    }
+    std::cout << "interested message send bytes "<< send_res << std::endl;
+}

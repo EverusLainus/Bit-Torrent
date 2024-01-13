@@ -1,6 +1,6 @@
 #include "PeerConnection.hpp"
-#include "RequestTracker.hpp"
-#include "BitTorrentMessage.hpp"
+#include "Piece.hpp"
+
 #include "Connect.h"
 
 std::string PeerConnection::CreateHandshakeMessage(){
@@ -146,7 +146,7 @@ void PeerConnection::ReceiveBitfieldMessage(int sock){
     peerBitField = message.bitfield;
     printf("bitfield message in printf is %d\n", message.bitfield.c_str());
     std::cout << "bitfield message is "<<peerBitField << std::endl;
-    SendInterested(sock);
+    SendInterested(sock, message);
 }
 
 void PeerConnection::PerformHandshake(){
@@ -168,12 +168,143 @@ void PeerConnection::PerformHandshake(){
     ReceiveBitfieldMessage(socket);
 }
 
-void PeerConnection::SendInterested(int socket){
-    std::string interstedMessage;
-    interstedMessage = interested
-    int send_res = send(socket, interestedMessage, sizeof(interestedMessage), 0);
-    if(send_res == -1){
-        std::cout << "error in sending message " << std::endl;
+int PeerConnection::SendInterested(int socket, BitTorrentMessage message ){
+
+    std::string interestedMessage;
+    interestedMessage= BitTorrentMessage(interested).toString();
+    SendData(socket, interestedMessage);
+    std::cout << "interested message send  " << std::endl;
+    Start(socket, message);
+    return 1;
+
+}
+
+BitTorrentMessage PeerConnection::ReceiveMessage(int socket){
+    std::cout << "ReceiveMessage: in" << std::endl;
+
+        struct pollfd fd;
+    fd.fd = socket;
+    fd.events = POLLIN;
+    int ret = poll(&fd, 1, 3000);
+    if(ret == -1){
+        perror("poll");
+    } else if( ret == 0){
+        perror("poll");
     }
-    std::cout << "interested message send bytes "<< send_res << std::endl;
+     
+    int lengthofMessage = 4;
+    char buffer[lengthofMessage];
+    long bytesRead;
+    int read;
+    do{
+        
+    bytesRead = recv(socket, buffer, sizeof(buffer), 0);
+    if(bytesRead < 0){
+        continue;
+    }
+    read += bytesRead;
+    }while(read < 4);
+    std::cout << "ReceiveMessage: bytes read:"<<bytesRead << std::endl;
+    if (bytesRead != lengthofMessage){
+        std::cout << "ReceiveMessage: length is four "<<std::endl;
+    }
+
+    std::string messageLengthStr;
+    for (char i : buffer)
+        messageLengthStr += i;
+    uint32_t messageLength = bytesToInt(messageLengthStr);
+    int bufferSize = messageLength;
+    std::cout << "ReceiveMessage: message length is: "<< bufferSize <<std::endl;
+
+    
+    std::string reply = ReceiveData(socket, bufferSize);
+    if (reply.empty())
+        return BitTorrentMessage(keepAlive);
+    auto messageId = (uint8_t) reply[0];
+    printf("receiveMessage: with id %d\n", messageId);
+    std::string payload = reply.substr(1);
+    return BitTorrentMessage(messageId, payload);
+}
+
+
+
+void PeerConnection::Start(int socket, BitTorrentMessage message){
+    std::cout << "Start: in "<<std::endl;
+    BitTorrentMessage receive_msg;
+    this->socket = socket;
+    std::cout << "declared a Bittorrent message variable \n";
+    if(1){
+        
+        receive_msg = ReceiveMessage(socket);
+        std::cout << " send interested is true with id "<< receive_msg.message_id << std::endl;
+    
+    switch(receive_msg.message_id){
+        case choke:
+            choked = true;
+            std::cout << "choke"<<std::endl;
+            break;
+
+        case unchoke:
+            choked = false;
+            std::cout << "unchoke"<<std::endl;
+            break;
+
+        case piece:
+        {
+            std::string payload = receive_msg.getPayload();
+            int index = bytesToInt(payload.substr(0, 4));
+            int begin = bytesToInt(payload.substr(4, 4));
+            std::string blockData = payload.substr(8);
+            std::cout << "block of index " << index <<
+            " beginning at " << begin << "received " << std::endl;
+            break;
+        }
+        default:
+            std::cout << "error with id "<<receive_msg.message_id << std::endl;
+    }
+    }
+    if (!choked)//unchoked
+    {
+        //if request is not pending
+        if (1)
+        {
+        requestPiece();
+        }
+    }
+}
+
+void PeerConnection::requestPiece(){
+    //instead of getting block from piece manager
+    //i have created a block
+    Block block;
+    block.piece =1;
+    block.offset = 1;
+    block.length = 16384; //2^14 bytes
+    /**
+     * @brief request message has
+     * length(4) messagetype (1) Piece index (4) Block offset (4) Block Length (4)
+     */
+    std::stringstream requestPeice;
+    int length_of_message = 17;
+    //requestPeice.write(reinterpret_cast<char*>(&length_of_message), sizeof(int));
+    int message_type = 6;
+    //requestPeice.write(reinterpret_cast<char*>(&message_type), sizeof(char));
+    int PieceIndex = block.piece;
+    requestPeice.write(reinterpret_cast<char*>(&PieceIndex), sizeof(int));
+    int blockOffset = block.offset;
+    requestPeice.write(reinterpret_cast<char*>(&blockOffset), sizeof(int));
+    int blockLength = block.length;
+    requestPeice.write(reinterpret_cast<char*>(&blockLength), sizeof(int));
+    //requestPeice << length_of_message;
+    //requestPeice << (char) message_type;
+    //requestPeice << blockOffset;
+    //requestPeice << blockLength;
+    std::string payload = requestPeice.str();
+    std::string request_msg  = BitTorrentMessage(request, payload).toString();
+    //std::cout << "request:" << request<<" with size:" << request.size() <<std::endl;
+    int sock = this->socket;
+    SendData(sock, request_msg);
+    BitTorrentMessage request_reply = ReceiveMessage(sock);
+    Start(sock, request_reply);
+
 }

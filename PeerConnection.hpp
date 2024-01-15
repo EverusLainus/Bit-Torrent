@@ -7,6 +7,7 @@
 #include "RequestTracker.hpp"
 #include "BitTorrentMessage.hpp"
 #include <poll.h>
+#include "loguru.hpp"
 
 class PeerConnection{
     public:

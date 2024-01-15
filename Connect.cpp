@@ -1,10 +1,21 @@
 //connect to a tcp server
 
 #include "Connect.h"
+#include <fcntl.h>
 
+bool setSocketBlocking(int sock, bool blocking)
+{
+    if (sock < 0)
+        return false;
+
+    int flags = fcntl(sock, F_GETFL, 0);
+    if (flags == -1) return false;
+    flags = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
+    return (fcntl(sock, F_SETFL, flags) == 0);
+}
 
 int Connect(std::string& ip, int port){
-    std::cout << "Connecting \n";
+    LOG_F(INFO, "going to Connect to peer with, Port:%d, Ip:%s ", port, ip.c_str());
 
 
 //addrinfo
@@ -14,7 +25,6 @@ int Connect(std::string& ip, int port){
     std::cout << hints.ai_family<<std::endl;
     hints.ai_family=AF_INET;
     hints.ai_socktype=SOCK_STREAM;
-    std::cout << "ip, port is ";
 
     char* tempIp = new char[ip.length() + 1];
     strcpy(tempIp, (ip).c_str());
@@ -22,11 +32,7 @@ int Connect(std::string& ip, int port){
     std::string int_string = std::to_string(port);
     const char * char_port = int_string.c_str();
 
-    //port = htons(port);
-    std::cout << "Connecting: initialised \n";
-         std::cout << *tempIp <<" " << port<<std::endl;
     fd=getaddrinfo(tempIp, char_port, &hints, &servinfo);
-    std::cout <<"fd is "<<fd<<std::endl;
     if(fd== -1){
         perror("getaddrinfo");
     }
@@ -34,7 +40,7 @@ int Connect(std::string& ip, int port){
     int socket_res;
     int connect_res;
     for(p=servinfo; p!=NULL;p=p->ai_next){
-        std::cout << "in for loop \n";
+        //std::cout << "Connect: in for loop \n";
         socket_res= socket(p->ai_family, p->ai_socktype, 0);
         if (socket_res == -1){
             perror("socket");
@@ -45,30 +51,16 @@ int Connect(std::string& ip, int port){
             perror("connect");
             continue;
         }
+        else{
+            LOG_F(INFO, "Connected to peer, Port:%d, Ip:%s ", port, ip.c_str());
+        }
         break;
     }
-    std::cout << "connected \n";
-
-//recv
-/*
-    int recv_res;
-    
-    char message[500];
-    recv_res = recv(socket_res, message, 100, 0);
-    if(recv_res ==-1){
-        perror("recv");
-        return 0;
+    // Sets socket to non-block mode
+    if (!setSocketBlocking(socket_res, false)){
+        perror("nonblocking");
+        return -1;
     }
-    std::cout <<" size of message received: "<< recv_res <<std::endl;
-    printf("message is ");
-    //clear the space
-    for(int i=0; i< sizeof message; i++){
-        printf("%c", message[i]);
-    }
-    message[recv_res]='\0';
-    */
-
-//close socket later
-    
+   
     return socket_res;      
 }

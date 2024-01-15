@@ -14,7 +14,7 @@
 
 //get announce URL
 std::string TrackerRequest::get_PeerID(){ 
-    std::cout << "into peers ID"<<std::endl;
+    std::cout << "get_PeerID: into peers ID"<<std::endl;
     const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     std::default_random_engine rng(std::random_device{}());
     std::uniform_int_distribution<> dist(0, sizeof(charset) - 2);
@@ -24,7 +24,7 @@ std::string TrackerRequest::get_PeerID(){
     for(size_t i=0; i<20 ; ++i){
         result.push_back(charset[dist(rng)]);
     }
-    std::cout <<" peerId : "<< result <<std::endl;
+    std::cout <<"get_PeerID: peerId : "<< result <<std::endl;
     // Create an output stream to build the encoded string
     std::ostringstream encoded;
 
@@ -47,7 +47,7 @@ std::string TrackerRequest::get_PeerID(){
             // ^ Convert character to its ASCII code in hexadecimal and append to the output stream
         }
     }
-    std::cout <<"urlencoded peerId : "<< encoded.str()<<std::endl;
+    std::cout <<"get_PeerID: urlencoded peerId : "<< encoded.str()<<std::endl;
 
     // Convert the output stream to a string and return
     return encoded.str();
@@ -69,7 +69,6 @@ std::string urlEncode(const std::string& value) {
             escaped << std::nouppercase;
         }
     }
-
     return escaped.str();
 }
 
@@ -87,6 +86,7 @@ std::string hexDecode(const std::string& value)
         char c = (char) (int) strtol(byte.c_str(), nullptr, 16);
         decodedHexString.push_back(c);
     }
+    std::cout <<"hexDecode: decoded hex string:"<< decodedHexString<<std::endl;
     return decodedHexString;
 }
 
@@ -94,15 +94,17 @@ std::string hexDecode(const std::string& value)
 
 //assumes someone has filled the tracker Request class
 void TrackerRequest::get_peers(std::string& file_path){
-    std::cout << "into get_peers "<<std::endl;
+    std::cout << "get_peers: into get_peers "<<std::endl;
     TorrentFileParser torrentFileParser(file_path);
-    std::cout << "get peers: after torrent file parser "<<std::endl;
+
+    infohash =torrentFileParser.getInfoHash();
+    //peerId = TrackerRequest::get_PeerID();
     announceUrl = torrentFileParser.getAnnounce();
-    std::cout << "get peers: after announce "<<std::endl;
+
     std::string info = torrentFileParser.getInfoHash();
-    std::cout << "get peers: after hash"<< info<<std::endl;
+
     std::string peerid = get_PeerID();
-    std::cout << "get peers: after peer id "<<std::endl;
+
     port = 2300;
     int fileSize = torrentFileParser.getFileSize();
 
@@ -110,20 +112,8 @@ void TrackerRequest::get_peers(std::string& file_path){
     infohash = hexDecode(url_encoded_hashInfo);
     std::cout << "get peers: url encoded hash "<< url_encoded_hashInfo <<std::endl;
     std::cout << "get peers: hex decode  "<< infohash <<std::endl;
-/*
-    //construct the tracker request URL
-    std::string trackerUrl = anounceurl + "?info_hash="+ info+
-    "&peer_id="+peerid 
-    +"&port="+std::to_string(port)
-    +"&uploaded="+std::to_string(0)
-    +"&downloaded=" +std::to_string(0)
-    +"&left=" + std::to_string(fileSize-0)
-    +"&compact=" + std::to_string(1);
 
-    //send the tracker request
-    auto response = cpr::Get(cpr::Url{trackerUrl});
-*/
-     cpr::Response res; 
+    cpr::Response res; 
     try{
     res = cpr::Get(cpr::Url{announceUrl}, cpr::Parameters {
             { "info_hash", std::string(infohash) },
@@ -151,15 +141,18 @@ void TrackerRequest::get_peers(std::string& file_path){
             
             
     }else{
-        std::cerr <<"Tracker request failed with status code: "<<res.status_code<<std::endl;
+        std::cerr <<"get_peers: Tracker request failed with status code: "<<res.status_code<<std::endl;
     }
     TrackerResponse = res.text;
 }
 
 std::vector <Peer *> TrackerRequest::decodeResponse(std::string response){
-
-    std::shared_ptr<bencoding::BItem> decodedResponse = bencoding::decode(response);
-
+    std::shared_ptr<bencoding::BItem> decodedResponse;
+    try{
+    decodedResponse = bencoding::decode(response);
+    } catch(const bencoding::DecodingError& e){
+        std::cerr << "Caught DecodingError: " << e.what() << std::endl;
+    }
     std::shared_ptr<bencoding::BDictionary> responseDict =
             std::dynamic_pointer_cast<bencoding::BDictionary>(decodedResponse);
         std::shared_ptr<bencoding::BItem> peersValue = responseDict->getValue("peers");
@@ -177,7 +170,7 @@ std::vector <Peer *> TrackerRequest::decodeResponse(std::string response){
                     Peer* newPeer = new Peer(peerIp, peerPort);
                     peers.push_back(newPeer);
             }
-            std::cout <<"peers size "<< peers.size() <<std::endl;
+            std::cout <<"decodeResponse: peers size "<< peers.size() <<std::endl;
     } 
 
     return peers;
@@ -185,18 +178,27 @@ std::vector <Peer *> TrackerRequest::decodeResponse(std::string response){
 
 
 void TrackerRequest::ConnectPeer(){
-    std::cout <<"into connect peer with size "<< peers.size() <<std::endl;
+    std::cout <<"ConnectPeer: into connect peer with size "<< peers.size() <<std::endl;
+    int x =3;
     for(auto *peer: peers){
-        std::cout << peer->ip << peer->port <<std::endl;
-    int sock = Connect(peer->ip, peer->port);
+        
+        if(x){
+            x--;
+            continue;
+        }
+        std::cout<<"ConnectPeer: with " << peer->ip<<" " << peer->port <<std::endl;
+        int sock = Connect(peer->ip, peer->port);
 
-    PeerConnection peerConnection;
-    peerConnection.peer = peer;
-    peerConnection.infohash= infohash;
-    peerConnection.peerId = peer->peer_id;
-    peerConnection.PerformHandshake();
+        PeerConnection peerConnection;
+        peerConnection.peer = peer;
+        peerConnection.infohash= infohash;
+        std::cout <<"ConnectPeer: info hash at connectPeer:"<<peerConnection.infohash<<std::endl;
+        peerConnection.peerId = get_PeerID();
+        std::cout << "ConnectPeer: after peer id \n";
+        peerConnection.PerformHandshake();
             
-    std::cout <<"socket is "<<sock<<std::endl;
+        std::cout <<"ConnectPeer: socket is "<<sock<<
+        "with peer id" << peerConnection.peerId <<std::endl;
     }  
 }
 

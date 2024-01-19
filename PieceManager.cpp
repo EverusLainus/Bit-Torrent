@@ -6,6 +6,7 @@
 PieceManager::PieceManager(const TorrentFileParser& parser, std::string& downloadPath): torrentFileParser(parser),
     pieceLength(torrentFileParser.getPieceSize()), downloadPath(downloadPath){
         missingPieces = initiatePieces();
+        LOG_F(INFO, "PieceManager- constructor: downloadPath is %s", downloadPath.c_str());
     }
 
 /**
@@ -45,23 +46,22 @@ bool hasPiece(const std::string& bitField, int index)
 std::vector<Piece*> PieceManager::initiatePieces(){
 
 
-    std::string fileName = "example.pdf";
-    std::string downloadPath = "/Users/everus/C-Programming/my_torrent/downloads/" + fileName;
+    //std::string fileName = "example.pdf";
+    //std::string downloadPath = "/Users/everus/C-Programming/my_torrent/downloads/" + fileName;
 
-           if (!std::filesystem::exists(downloadPath)) {
+        if (!std::filesystem::exists(downloadPath)) {
             // Handle the case where the file doesn't exist
-            std::ofstream createFile(downloadPath);
-            if (!createFile.is_open()) {
-                std::cerr << "Error creating the file: " << downloadPath << std::endl;
+            LOG_F(INFO, "file doesnt exist already");
+                //create a file; truncate it according to file size
+            downloadedFile.open(downloadPath, std::ios::binary | std::ios::out | std::ios::in);
+            downloadedFile.seekp(torrentFileParser.getFileSize() - 1);
+            downloadedFile.write("", 1);
+            if (!downloadedFile) {
+                std::cerr << "Error truncating the file: " << downloadPath << std::endl;
+                LOG_F(INFO, "error turncating");
             }
         }
-
-    //create a file; truncate it according to file size
-    downloadedFile.open(downloadPath, std::ios::binary | std::ios::out | std::ios::in);
-    downloadedFile.seekp(torrentFileParser.getFileSize() - 1);
-    downloadedFile.write("", 1);
-    
-    
+        
 
     std::cout << "initiatePieces:  in \n";
     LOG_F(INFO, "Initating Pieces ");
@@ -266,8 +266,9 @@ void PieceManager::BlockReceived(std::string peerId, int pieceIndex, int blockOf
         writeToDisc(now_piece);
         LOG_F(INFO, "written to disc");
     
- 
+    
     }
+
     if(now_piece->Piece_index == 9){
         downloadedFile.close();
     }
@@ -278,18 +279,37 @@ void PieceManager::BlockReceived(std::string peerId, int pieceIndex, int blockOf
 
 void PieceManager::writeToDisc(Piece* piece)
 {
+    std::cout << "writeToDisc: in\n";
     if (!downloadedFile.is_open()) {
         std::cerr << "Error opening the file: " << downloadPath << std::endl;
-        LOG_F(INFO, "error opening file");
+        LOG_F(INFO, "error opening file %s", downloadPath.c_str());
+
+        if (downloadedFile.bad()) {
+            std::cerr << "Stream is bad (unrecoverable error)." << std::endl;
+        } else if (downloadedFile.fail()) {
+            std::cerr << "Stream operation failed." << std::endl;
+        } else if (downloadedFile.eof()) {
+            std::cerr << "End of file reached unexpectedly." << std::endl;
+        } else {
+            std::cerr << "Unknown error." << std::endl;
+        }
         return;
     }    
     long position = piece->Piece_index * torrentFileParser.getPieceSize();
     downloadedFile.seekp(position);
-    downloadedFile << piece->Data();
-    if(downloadedFile.fail()){
-        LOG_F(INFO, "download failed");
-        std::cerr << "Error writing data to the file." << std::endl;
+    long currentPosition = downloadedFile.tellp();
+    if (currentPosition != position) {
+        LOG_F(INFO, "Error in file position.");
+        std::cerr << "Error in file position." << std::endl;
+        return;
     }
-        // Close the file
+    downloadedFile << piece->Data() <<std::endl;
+    if (!downloadedFile.is_open() || downloadedFile.fail()) {
+        LOG_F(INFO, "Error writing data to the file.");
+        std::cerr << "Error writing data to the file." << std::endl;
+        return;
+    }
+
+    // Close the file
     downloadedFile.close();
 }

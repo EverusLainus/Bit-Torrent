@@ -199,6 +199,7 @@ void PeerConnection::ReceiveBitfieldMessage(int sock){
         //std::cout << " ReceiveBitfieldMessage: expected a bitField message\n";
     }
     peerBitField = message.bitfield;
+    pieceManager->addPeer(peerId, peerBitField);
     //printf("bitfield message in printf is %d\n", message.bitfield.c_str());
     LOG_F(INFO, "ReceiveBitfieldMessage: bitfield message in printf is %s", message.bitfield.c_str());
     std::cout << "bitfield message is "<<peerBitField << std::endl;
@@ -377,13 +378,13 @@ std::string receiveData(const int sock, uint32_t bufferSize)
             //std::cout << "timeout " <<std::endl;
             //throw std::runtime_error("Read timeout from socket " + std::to_string(sock));
         }
-        std::cout << "bytes read before recv: "<<bytesRead<< std::endl;
+        //std::cout << "bytes read before recv: "<<bytesRead<< std::endl;
         bytesRead = recv(sock, buffer, bufferSize, 0);
-        std::cout << "bytes read after recv: "<<bytesRead<< std::endl;
+        //std::cout << "bytes read after recv: "<<bytesRead<< std::endl;
 
         if (bytesRead < 0){
             
-            std::cout << "failed to receive data <0 \n";
+           // std::cout << "failed to receive data <0 \n";
             continue;
             //throw std::runtime_error("Failed to receive data from socket " + std::to_string(sock));
         }
@@ -554,18 +555,25 @@ void PeerConnection::requestPiece(){
 */
 
 void PeerConnection::requestPiece() {
+    std::cout << "requestPiece: in\n";
 
-    Block block;
+    Block *block = pieceManager->nextRequest(peerId);
+    if(!block){
+        std::cout << "requestPiece:  block is null "<<std::endl;
+        return;
+    }
+    LOG_F(INFO, "next piece:%d, block:%d, length:%d", block->piece, block->offset, block->length);
+    /*
     block.piece =0;
     block.offset = 0;
     block.length = 16384; //2^14 bytes
-
+*/
     int payloadLength = 12;
     char temp[payloadLength];
     // Needs to convert little-endian to big-endian
-    uint32_t index = htonl(block.piece);
-    uint32_t offset = htonl(block.offset);
-    uint32_t length = htonl(block.length);
+    uint32_t index = htonl(block->piece);
+    uint32_t offset = htonl(block->offset);
+    uint32_t length = htonl(block->length);
     std::memcpy(temp, &index, sizeof(int));
     std::memcpy(temp + 4, &offset, sizeof(int));
     std::memcpy(temp + 8, &length, sizeof(int));
@@ -576,9 +584,9 @@ void PeerConnection::requestPiece() {
     std::stringstream info;
     LOG_F(INFO, " sending request message to peer ");
     info << "Sending Request message to peer " << peer->ip << " ";
-    info << "[Piece: " << std::to_string(block.piece) << " ";
-    info << "Offset: " << std::to_string(block.offset) << " ";
-    info << "Length: " << std::to_string(block.length) << "]";
+    info << "[Piece: " << std::to_string(block->piece) << " ";
+    info << "Offset: " << std::to_string(block->offset) << " ";
+    info << "Length: " << std::to_string(block->length) << "]";
     LOG_F(INFO, "%s", info.str().c_str());
     std::string requestMessage = BitTorrentMessage(request, payload).toString();
     std::cout << "request Message: message is "<<requestMessage<<std::endl;

@@ -79,6 +79,7 @@ std::string Piece::Data(){
         for(Block* block : blocks){
             data << block->data;
         }
+        std::cout << "length of data " << data.str().size() <<std::endl;
         return data.str();
     }
     return nullptr;

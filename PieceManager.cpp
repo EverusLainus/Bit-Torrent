@@ -1,6 +1,8 @@
 #include <string>
 #include "PieceManager.hpp"
 #include <filesystem>
+#include <cstdlib>
+#include <unistd.h>
 
 
 PieceManager::PieceManager(const TorrentFileParser& parser, std::string& downloadPath): torrentFileParser(parser),
@@ -53,7 +55,7 @@ std::vector<Piece*> PieceManager::initiatePieces(){
             // Handle the case where the file doesn't exist
             LOG_F(INFO, "file doesnt exist already");
                 //create a file; truncate it according to file size
-            downloadedFile.open(downloadPath, std::ios::binary | std::ios::out | std::ios::in);
+            downloadedFile.open(downloadPath, std::ios::binary | std::ios::out);
             downloadedFile.seekp(torrentFileParser.getFileSize() - 1);
             downloadedFile.write("", 1);
             if (!downloadedFile) {
@@ -71,6 +73,7 @@ std::vector<Piece*> PieceManager::initiatePieces(){
     fileLength = torrentFileParser.getFileSize();
     LOG_F(INFO, "totalPieces:%d, fileSize:%d", totalPieces, fileLength);
     pieceLength = torrentFileParser.getPieceSize();
+    LOG_F(INFO, "Pieces length:%d",pieceLength);
     blockCount = ceil(pieceLength/BLOCK_SIZE);
     int LastPieceSize;
     for(int i=0; i < totalPieces; ++i){
@@ -128,7 +131,7 @@ Block* PieceManager::nextRequest(std::string peerId){
     if(!block){
         std::cout << "got bock from next peice\n";
         LOG_F(INFO,"got bock from next peice");
-        now_piece = getNextPieceInSequence(peerId);
+        now_piece = rarestFirst(peerId);
         std::cout << "now_piece"<<now_piece->Piece_index<<std::endl;
         std::cout << "next getNextPieceInSequence \n";
         if(!now_piece){
@@ -166,6 +169,42 @@ Block* PieceManager::nextOngoing(std::string peerId)
     return nullptr;
 }
 
+Piece* PieceManager::rarestFirst(std::string peerId){
+
+    //order with respect to the index of the pieces'
+    auto comp = [](const Piece* a, const Piece* b){ return a->Piece_index < b->Piece_index;};
+
+    //map to store the count of each piece
+    std::map< Piece*, int, decltype(comp)> countOfEachPiece(comp);
+
+    for(Piece* piece : missingPieces){
+        //there is a peer connection with peerId
+        if(peers.find(peerId) != peers.end()){
+            //if bitField of the peerId has the bit set
+            if(hasPiece(peers[peerId], piece->Piece_index)){
+                countOfEachPiece[piece] += 1;
+            }
+        }
+    }
+
+    Piece* rarePiece;
+    int leastCount = INT16_MAX;
+    for(auto [piece, count] : countOfEachPiece){
+        if(count < leastCount){
+            leastCount = count;
+            rarePiece = piece; 
+        }
+    }
+
+    //remove from the missing pieces
+    std::cout << "missing pieces size : "<<missingPieces.size() << std::endl;
+    missingPieces.erase( std::remove(missingPieces.begin(), missingPieces.end(), rarePiece), missingPieces.end());
+
+    //add to ongoing pieces
+    ongoingPieces.emplace_back(rarePiece);
+    
+    return rarePiece;
+}
 
 //alternative for rarest piece first
 Piece* PieceManager::getNextPieceInSequence(std::string peerId){
@@ -265,23 +304,24 @@ void PieceManager::BlockReceived(std::string peerId, int pieceIndex, int blockOf
         }
         writeToDisc(now_piece);
         LOG_F(INFO, "written to disc");
-    
-    
+     
     }
+    
+    
 
     if(now_piece->Piece_index == 9){
         downloadedFile.close();
+        std::cout << "terminating the program\n";
+        sleep(3);
+        std::exit(0); 
     }
-
-
-
 }
 
 void PieceManager::writeToDisc(Piece* piece)
 {
     std::cout << "writeToDisc: in\n";
     if (!downloadedFile.is_open()) {
-        std::cerr << "Error opening the file: " << downloadPath << std::endl;
+        std::cerr << "Error opening the file: " << downloadPath << ". Stream state: " << downloadedFile.rdstate() << std::endl;
         LOG_F(INFO, "error opening file %s", downloadPath.c_str());
 
         if (downloadedFile.bad()) {
@@ -293,23 +333,25 @@ void PieceManager::writeToDisc(Piece* piece)
         } else {
             std::cerr << "Unknown error." << std::endl;
         }
-        return;
-    }    
+        //return;
+    } 
+    downloadedFile.clear();   
     long position = piece->Piece_index * torrentFileParser.getPieceSize();
+    LOG_F(INFO, " piece: %d, position %d", piece->Piece_index, position);
     downloadedFile.seekp(position);
     long currentPosition = downloadedFile.tellp();
     if (currentPosition != position) {
         LOG_F(INFO, "Error in file position.");
         std::cerr << "Error in file position." << std::endl;
-        return;
+        //return;
     }
     downloadedFile << piece->Data() <<std::endl;
     if (!downloadedFile.is_open() || downloadedFile.fail()) {
         LOG_F(INFO, "Error writing data to the file.");
         std::cerr << "Error writing data to the file." << std::endl;
-        return;
+        //return;
     }
-
+    std::cerr << "out file ." << std::endl;
     // Close the file
-    downloadedFile.close();
+    //downloadedFile.close();
 }

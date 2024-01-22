@@ -95,11 +95,13 @@ std::string hexDecode(const std::string& value)
 //assumes someone has filled the tracker Request class
 void TrackerRequest::get_peers(std::string& file_path){
     std::cout << "get_peers: into get_peers "<<std::endl;
+    filePath = &file_path;
+    std::cout << "filePath: "<<*filePath<<std::endl;
     TorrentFileParser torrentFileParser(file_path);
-
     infohash =torrentFileParser.getInfoHash();
     //peerId = TrackerRequest::get_PeerID();
     announceUrl = torrentFileParser.getAnnounce();
+    std::cout << "announceUrl: "<< announceUrl << std::endl;
 
     std::string info = torrentFileParser.getInfoHash();
 
@@ -142,8 +144,41 @@ void TrackerRequest::get_peers(std::string& file_path){
             
     }else{
         std::cerr <<"get_peers: Tracker request failed with status code: "<<res.status_code<<std::endl;
+
+            for (const auto& header : res.header) {
+                std::cout << header.first << ": " << header.second << std::endl;
+            }
+
+            // Print the response body
+            std::cout << "Response Body: " << res.text << std::endl;
     }
     TrackerResponse = res.text;
+}
+
+//to decode peers in compact form
+void TrackerRequest::decodePeers(const std::string& peer) {
+    if (peer.size() % 6 != 0) {
+        std::cerr << "Invalid peers data length." << std::endl;
+        return;
+    }
+
+    for (size_t i = 0; i < peer.size(); i += 6) {
+        // Extract the 4-byte IP address and 2-byte port
+        uint32_t ipAddress;
+        uint16_t port;
+        std::memcpy(&ipAddress, peer.data() + i, 4);
+        std::memcpy(&port, peer.data() + i + 4, 2);
+        std::string peerIp = std::to_string(ipAddress);
+        int peerPort = static_cast<int>(port);
+        // Convert network byte order to host byte order
+        ipAddress = ntohl(ipAddress);
+        port = ntohs(port);
+
+        // Print the decoded peer information
+        std::cout << "Peer: " << inet_ntoa(*(struct in_addr*)&ipAddress) << ":" << port << std::endl;
+        Peer* newPeer = new Peer(peerIp, peerPort);
+        peers.push_back(newPeer);
+    }
 }
 
 std::vector <Peer *> TrackerRequest::decodeResponse(std::string response){
@@ -157,6 +192,8 @@ std::vector <Peer *> TrackerRequest::decodeResponse(std::string response){
             std::dynamic_pointer_cast<bencoding::BDictionary>(decodedResponse);
         std::shared_ptr<bencoding::BItem> peersValue = responseDict->getValue("peers");
             //peer info is stored in a list
+
+
             if(typeid(*peersValue) == typeid(bencoding::BList)){
                  std::shared_ptr<bencoding::BList> peerList = std::dynamic_pointer_cast<bencoding::BList>(peersValue);
                  for(auto &item : *peerList){
@@ -169,8 +206,41 @@ std::vector <Peer *> TrackerRequest::decodeResponse(std::string response){
                     int peerPort = (int) std::dynamic_pointer_cast<bencoding::BInteger>(tempPeerPort)->value();
                     Peer* newPeer = new Peer(peerIp, peerPort);
                     peers.push_back(newPeer);
-            }
+                }
+            
             std::cout <<"decodeResponse: peers size "<< peers.size() <<std::endl;
+    }
+    else{
+        if (typeid(*peersValue) == typeid(bencoding::BString))
+            {
+                // Unmarshalls the peer information:
+                // Detailed explanation can be found here:
+                // https://blog.jse.li/posts/torrent/
+                // Essentially, every 6 bytes represent a single peer with the first 4 bytes being the IP
+                // and the last 2 bytes being the port number.
+                const int peerInfoSize = 6;
+                std::string peersString = std::dynamic_pointer_cast<bencoding::BString>(peersValue)->value();
+
+                if (peersString.length() % peerInfoSize != 0)
+                    throw std::runtime_error(
+                            "Received malformed 'peers' from tracker. ['peers' length needs to be divisible by 6]");
+
+                const int peerNum = peersString.length() / peerInfoSize;
+                for (int i = 0; i < peerNum; i++)
+                {
+                    int offset = i * peerInfoSize;
+                    std::stringstream peerIp;
+                    peerIp << std::to_string((uint8_t) peersString[offset]) << ".";
+                    peerIp << std::to_string((uint8_t) peersString[offset + 1]) << ".";
+                    peerIp << std::to_string((uint8_t) peersString[offset + 2]) << ".";
+                    peerIp << std::to_string((uint8_t) peersString[offset + 3]);
+                    int peerPort = bytesToInt(peersString.substr(offset + 4, 2));
+                    // std::cout << "IP: " << peerIp.str() << std::endl;
+                    // std::cout << "Port: " << std::to_string(peerPort) << std::endl;
+                    Peer* newPeer = new Peer { peerIp.str(), peerPort };
+                    peers.push_back(newPeer);
+                }
+            }
     } 
 
     return peers;
@@ -179,17 +249,18 @@ std::vector <Peer *> TrackerRequest::decodeResponse(std::string response){
 
 void TrackerRequest::ConnectPeer(){
     std::cout <<"ConnectPeer: into connect peer with size "<< peers.size() <<std::endl;
-    int x =3;
+    int x = 0;
     for(auto *peer: peers){
-        
+        std::cout << peer->ip<<":" << peer->port <<std::endl;
         if(x){
             x--;
             continue;
         }
         std::cout<<"ConnectPeer: with " << peer->ip<<" " << peer->port <<std::endl;
         int sock = Connect(peer->ip, peer->port);
-
-        PeerConnection peerConnection;
+        TorrentFileParser r_fileparser(*filePath);
+        std::cout << "create peerConnection downloadPath" << downloadPath <<std::endl;
+        PeerConnection  peerConnection(r_fileparser, downloadPath);
         peerConnection.peer = peer;
         peerConnection.infohash= infohash;
         std::cout <<"ConnectPeer: info hash at connectPeer:"<<peerConnection.infohash<<std::endl;
